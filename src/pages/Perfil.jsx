@@ -48,8 +48,6 @@ function Perfil() {
           return;
         }
 
-        setUsuario(usuarioLogado);
-
         const requisicao = async (caminho) =>
           fetch(`${API_URL}${caminho}`, {
             method: "GET",
@@ -59,9 +57,20 @@ function Perfil() {
             },
           });
 
+        const usuarioResponse = await requisicao("/api/usuarios/me");
+
+        if (!usuarioResponse.ok) {
+          throw new Error("Não foi possível carregar os dados do perfil.");
+        }
+
+        const usuarioAtual = await usuarioResponse.json();
+
+        if (!ativo) return;
+
+        setUsuario(usuarioAtual);
+
         const resultados = await Promise.allSettled([
-          requisicao(`/api/usuarios/${usuarioLogado.id}`),
-          requisicao(`/api/solicitacoes/usuario/${usuarioLogado.id}`),
+          requisicao(`/api/solicitacoes/usuario/${usuarioAtual.id}`),
           requisicao("/api/carteiras-capiba/minha"),
           requisicao("/api/carteiras-capiba/minha/movimentacoes"),
           requisicao("/api/propostas-parceria/minhas"),
@@ -69,15 +78,12 @@ function Perfil() {
 
         if (!ativo) return;
 
-        const [usuarioResultado, solicitacoesResultado, carteiraResultado, movimentacoesResultado, propostasResultado] =
-          resultados;
-
-        if (
-          usuarioResultado.status === "fulfilled" &&
-          usuarioResultado.value.ok
-        ) {
-          setUsuario(await usuarioResultado.value.json());
-        }
+        const [
+          solicitacoesResultado,
+          carteiraResultado,
+          movimentacoesResultado,
+          propostasResultado,
+        ] = resultados;
 
         if (
           solicitacoesResultado.status === "fulfilled" &&
@@ -266,6 +272,7 @@ function Perfil() {
       usuario.bairro,
       usuario.cidade,
       usuario.estado,
+      usuario.cep ? `CEP: ${usuario.cep}` : "",
     ].filter(Boolean);
 
     return endereco.length ? endereco.join(", ") : "-";

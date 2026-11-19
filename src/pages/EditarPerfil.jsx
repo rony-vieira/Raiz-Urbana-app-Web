@@ -6,7 +6,6 @@ import "./EditarPerfil.css";
 function EditarPerfil() {
   const navigate = useNavigate();
 
-  const [usuarioId, setUsuarioId] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [buscandoCep, setBuscandoCep] = useState(false);
@@ -29,8 +28,11 @@ function EditarPerfil() {
     const usuarioSalvo =
       sessionStorage.getItem("usuarioLogado") ||
       localStorage.getItem("usuarioLogado");
+    const token =
+      sessionStorage.getItem("token") ||
+      localStorage.getItem("token");
 
-    if (!usuarioSalvo) {
+    if (!usuarioSalvo || !token) {
       navigate("/login");
       return;
     }
@@ -38,20 +40,12 @@ function EditarPerfil() {
     try {
       const usuarioLogado = JSON.parse(usuarioSalvo);
 
-      if (usuarioLogado.tipo === "GESTOR") {
+      if (usuarioLogado.tipo === "GESTOR" || usuarioLogado.tipo === "BOSS") {
         navigate("/gestor");
         return;
       }
 
-      setUsuarioId(usuarioLogado.id);
-
-      setForm((anterior) => ({
-        ...anterior,
-        nomeCompleto: usuarioLogado.nomeCompleto || "",
-        email: usuarioLogado.email || "",
-      }));
-
-      carregarUsuario(usuarioLogado);
+      carregarUsuario(token);
     } catch (erro) {
       console.error("Erro ao recuperar usuário:", erro);
 
@@ -62,22 +56,23 @@ function EditarPerfil() {
     }
   }, [navigate]);
 
-  const carregarUsuario = async (usuarioLogado) => {
+  const carregarUsuario = async (token) => {
     try {
       setCarregando(true);
 
       const response = await fetch(
-        `${API_URL}/api/usuarios/${usuarioLogado.id}`
+        `${API_URL}/api/usuarios/me`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+          },
+        }
       );
 
       if (!response.ok) {
-        setForm((anterior) => ({
-          ...anterior,
-          nomeCompleto: usuarioLogado.nomeCompleto || "",
-          email: usuarioLogado.email || "",
-        }));
-
-        return;
+        throw new Error("Não foi possível carregar os dados do perfil.");
       }
 
       const dados = await response.json();
@@ -195,8 +190,13 @@ function EditarPerfil() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!usuarioId) {
-      alert("Usuário não identificado.");
+    const token =
+      sessionStorage.getItem("token") ||
+      localStorage.getItem("token");
+
+    if (!token) {
+      alert("Sua sessão expirou. Entre novamente na sua conta.");
+      navigate("/login");
       return;
     }
 
@@ -233,11 +233,13 @@ function EditarPerfil() {
       setSalvando(true);
 
       const response = await fetch(
-        `${API_URL}/api/usuarios/${usuarioId}`,
+        `${API_URL}/api/usuarios/me`,
         {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
           },
           body: JSON.stringify(dados),
         }
@@ -264,13 +266,10 @@ function EditarPerfil() {
         localStorage.getItem("usuarioLogado");
 
       if (usuarioSalvo) {
-        const usuarioAtual =
-          JSON.parse(usuarioSalvo);
-
+        const usuarioAtual = JSON.parse(usuarioSalvo);
         const usuarioAtualizado = {
           ...usuarioAtual,
-          nomeCompleto: form.nomeCompleto,
-          email: form.email,
+          ...(resposta || dados),
         };
 
         if (
