@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import API_URL from "../services/api";
@@ -13,6 +14,8 @@ function Perfil() {
   const [propostas, setPropostas] = useState([]);
   const [erroPropostas, setErroPropostas] = useState("");
   const [carregando, setCarregando] = useState(true);
+
+  const ehEmpresaParceira = usuario?.tipo === "EMPRESA_PARCEIRA";
 
   useEffect(() => {
     let ativo = true;
@@ -69,12 +72,17 @@ function Perfil() {
 
         setUsuario(usuarioAtual);
 
-        const resultados = await Promise.allSettled([
+        const requisicoes = [
           requisicao(`/api/solicitacoes/usuario/${usuarioAtual.id}`),
           requisicao("/api/carteiras-capiba/minha"),
           requisicao("/api/carteiras-capiba/minha/movimentacoes"),
-          requisicao("/api/propostas-parceria/minhas"),
-        ]);
+        ];
+
+        if (usuarioAtual.tipo === "EMPRESA_PARCEIRA") {
+          requisicoes.push(requisicao("/api/propostas-parceria/minhas"));
+        }
+
+        const resultados = await Promise.allSettled(requisicoes);
 
         if (!ativo) return;
 
@@ -114,18 +122,23 @@ function Perfil() {
           setMovimentacoes([]);
         }
 
-        if (
-          propostasResultado.status === "fulfilled" &&
-          propostasResultado.value.ok
-        ) {
-          const dados = await propostasResultado.value.json();
-          setPropostas(Array.isArray(dados) ? dados : []);
-          setErroPropostas("");
+        if (usuarioAtual.tipo === "EMPRESA_PARCEIRA") {
+          if (
+            propostasResultado?.status === "fulfilled" &&
+            propostasResultado.value.ok
+          ) {
+            const dados = await propostasResultado.value.json();
+            setPropostas(Array.isArray(dados) ? dados : []);
+            setErroPropostas("");
+          } else {
+            setPropostas([]);
+            setErroPropostas(
+              "Não foi possível carregar suas propostas. Tente novamente mais tarde."
+            );
+          }
         } else {
           setPropostas([]);
-          setErroPropostas(
-            "Não foi possível carregar suas propostas. Tente novamente mais tarde."
-          );
+          setErroPropostas("");
         }
       } catch (erro) {
         console.error("Erro ao carregar perfil:", erro);
@@ -438,106 +451,108 @@ function Perfil() {
           </div>
         </section>
 
-        <section className="perfil-propostas">
-          <div className="perfil-section-header">
-            <div>
-              <h2>Minhas propostas de parceria</h2>
-              <p className="perfil-propostas-descricao">
-                Acompanhe a análise das propostas enviadas ao Raiz Urbana.
-              </p>
+        {ehEmpresaParceira && (
+          <section className="perfil-propostas">
+            <div className="perfil-section-header">
+              <div>
+                <h2>Minhas propostas de parceria</h2>
+                <p className="perfil-propostas-descricao">
+                  Acompanhe a análise das propostas enviadas ao Raiz Urbana.
+                </p>
+              </div>
             </div>
-          </div>
 
-          {erroPropostas ? (
-            <p className="perfil-propostas-mensagem perfil-propostas-erro">
-              {erroPropostas}
-            </p>
-          ) : propostas.length === 0 ? (
-            <div className="perfil-propostas-vazio">
-              <span className="perfil-propostas-vazio-icone">🤝</span>
-              <h3>Nenhuma proposta encontrada</h3>
-              <p>
-                Quando você enviar uma proposta de parceria, poderá acompanhar
-                o andamento dela nesta seção.
+            {erroPropostas ? (
+              <p className="perfil-propostas-mensagem perfil-propostas-erro">
+                {erroPropostas}
               </p>
-              <Link to="/proposta-parceria" className="perfil-propostas-link">
-                Enviar proposta de parceria
-              </Link>
-            </div>
-          ) : (
-            <div className="perfil-propostas-lista">
-              {propostas.map((proposta) => {
-                const statusInfo = traduzirStatusProposta(proposta.status);
+            ) : propostas.length === 0 ? (
+              <div className="perfil-propostas-vazio">
+                <span className="perfil-propostas-vazio-icone">🤝</span>
+                <h3>Nenhuma proposta encontrada</h3>
+                <p>
+                  Quando você enviar uma proposta de parceria, poderá acompanhar
+                  o andamento dela nesta seção.
+                </p>
+                <Link to="/proposta-parceria" className="perfil-propostas-link">
+                  Enviar proposta de parceria
+                </Link>
+              </div>
+            ) : (
+              <div className="perfil-propostas-lista">
+                {propostas.map((proposta) => {
+                  const statusInfo = traduzirStatusProposta(proposta.status);
 
-                return (
-                  <article
-                    key={proposta.id}
-                    className="perfil-proposta-item"
-                  >
-                    <div className="perfil-proposta-cabecalho">
-                      <div className="perfil-proposta-empresa">
-                        <span className="perfil-proposta-icone">🏢</span>
-                        <div>
-                          <h3>
-                            {proposta.nomeFantasia ||
-                              proposta.razaoSocial ||
-                              "Proposta de parceria"}
-                          </h3>
-                          <p>{traduzirTipoParceria(proposta)}</p>
+                  return (
+                    <article
+                      key={proposta.id}
+                      className="perfil-proposta-item"
+                    >
+                      <div className="perfil-proposta-cabecalho">
+                        <div className="perfil-proposta-empresa">
+                          <span className="perfil-proposta-icone">🏢</span>
+                          <div>
+                            <h3>
+                              {proposta.nomeFantasia ||
+                                proposta.razaoSocial ||
+                                "Proposta de parceria"}
+                            </h3>
+                            <p>{traduzirTipoParceria(proposta)}</p>
+                          </div>
                         </div>
-                      </div>
 
-                      <span
-                        className={`perfil-proposta-status ${statusInfo.classe}`}
-                      >
-                        {statusInfo.texto}
-                      </span>
-                    </div>
-
-                    <div className="perfil-proposta-datas">
-                      <span>
-                        Enviada em: {formatarData(proposta.dataEnvio)}
-                      </span>
-
-                      {proposta.dataAnalise && (
-                        <span>
-                          Analisada em: {formatarData(proposta.dataAnalise)}
+                        <span
+                          className={`perfil-proposta-status ${statusInfo.classe}`}
+                        >
+                          {statusInfo.texto}
                         </span>
-                      )}
-                    </div>
-
-                    {proposta.feedback && (
-                      <div className="perfil-proposta-feedback">
-                        <strong>Feedback da análise</strong>
-                        <p>{proposta.feedback}</p>
                       </div>
-                    )}
 
-                    {proposta.status === "PENDENTE" && (
-                      <p className="perfil-proposta-aviso">
-                        Sua proposta está aguardando análise pela equipe.
-                      </p>
-                    )}
+                      <div className="perfil-proposta-datas">
+                        <span>
+                          Enviada em: {formatarData(proposta.dataEnvio)}
+                        </span>
 
-                    {proposta.status === "APROVADA" && (
-                      <p className="perfil-proposta-sucesso">
-                        Sua proposta foi aprovada. Obrigado por apoiar o
-                        Raiz Urbana!
-                      </p>
-                    )}
+                        {proposta.dataAnalise && (
+                          <span>
+                            Analisada em: {formatarData(proposta.dataAnalise)}
+                          </span>
+                        )}
+                      </div>
 
-                    {proposta.status === "REJEITADA" && (
-                      <p className="perfil-proposta-aviso">
-                        Sua proposta foi rejeitada. Consulte o feedback acima
-                        para conhecer a justificativa, caso tenha sido informada.
-                      </p>
-                    )}
-                  </article>
-                );
-              })}
-            </div>
-          )}
-        </section>
+                      {proposta.feedback && (
+                        <div className="perfil-proposta-feedback">
+                          <strong>Feedback da análise</strong>
+                          <p>{proposta.feedback}</p>
+                        </div>
+                      )}
+
+                      {proposta.status === "PENDENTE" && (
+                        <p className="perfil-proposta-aviso">
+                          Sua proposta está aguardando análise pela equipe.
+                        </p>
+                      )}
+
+                      {proposta.status === "APROVADA" && (
+                        <p className="perfil-proposta-sucesso">
+                          Sua proposta foi aprovada. Obrigado por apoiar o
+                          Raiz Urbana!
+                        </p>
+                      )}
+
+                      {proposta.status === "REJEITADA" && (
+                        <p className="perfil-proposta-aviso">
+                          Sua proposta foi rejeitada. Consulte o feedback acima
+                          para conhecer a justificativa, caso tenha sido informada.
+                        </p>
+                      )}
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
 
         <section className="perfil-solicitacoes">
           <div className="perfil-section-header">

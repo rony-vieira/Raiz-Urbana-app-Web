@@ -1,43 +1,74 @@
-import { useState } from "react";
+
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import "./AdminSolicitacoes.css";
 
+const API_URL =
+  import.meta.env.VITE_API_URL ||
+  "https://raiz-urbana-back-end.onrender.com";
+
 function AdminSolicitacoes() {
+  const [solicitacoes, setSolicitacoes] = useState([]);
   const [filtroStatus, setFiltroStatus] = useState("TODAS");
   const [busca, setBusca] = useState("");
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState("");
 
-  const [solicitacoes] = useState([
-    {
-      id: 1,
-      protocolo: "2026000001",
-      nomeCompleto: "Usuário Exemplo",
-      bairro: "Boa Viagem",
-      ruaAvenida: "Avenida Exemplo",
-      status: "PENDENTE",
-      dataSolicitacao: "24/09/2026",
-    },
-    {
-      id: 2,
-      protocolo: "2026000002",
-      nomeCompleto: "Usuário Teste",
-      bairro: "Casa Amarela",
-      ruaAvenida: "Rua Exemplo",
-      status: "EM_ANALISE",
-      dataSolicitacao: "23/09/2026",
-    },
-    {
-      id: 3,
-      protocolo: "2026000003",
-      nomeCompleto: "Usuário Concluído",
-      bairro: "Madalena",
-      ruaAvenida: "Rua das Árvores",
-      status: "CONCLUIDO",
-      dataSolicitacao: "22/09/2026",
-    },
-  ]);
+  useEffect(() => {
+    const carregarSolicitacoes = async () => {
+      try {
+        setCarregando(true);
+        setErro("");
+
+        const token =
+          sessionStorage.getItem("token") ||
+          localStorage.getItem("token");
+
+        if (!token) {
+          setErro("Sua sessão expirou. Faça login novamente.");
+          return;
+        }
+
+        const resposta = await fetch(`${API_URL}/api/solicitacoes`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        });
+
+        if (resposta.status === 401) {
+          setErro("Sua sessão expirou. Faça login novamente.");
+          return;
+        }
+
+        if (resposta.status === 403) {
+          setErro("Você não tem permissão para visualizar as solicitações.");
+          return;
+        }
+
+        if (!resposta.ok) {
+          throw new Error("Não foi possível carregar as solicitações.");
+        }
+
+        const dados = await resposta.json();
+        setSolicitacoes(Array.isArray(dados) ? dados : []);
+      } catch (error) {
+        console.error("Erro ao carregar solicitações:", error);
+        setErro(error.message || "Erro ao conectar com o servidor.");
+      } finally {
+        setCarregando(false);
+      }
+    };
+
+    carregarSolicitacoes();
+  }, []);
+
+  const normalizarStatus = (status) =>
+    String(status || "").toUpperCase().trim();
 
   const traduzirStatus = (status) => {
-    switch (status) {
+    switch (normalizarStatus(status)) {
       case "PENDENTE":
         return "Pendente";
       case "EM_ANALISE":
@@ -45,30 +76,36 @@ function AdminSolicitacoes() {
       case "VISITA_AGENDADA":
         return "Visita agendada";
       case "APROVADO":
+      case "APROVADA":
         return "Aprovado";
       case "CONCLUIDO":
+      case "CONCLUIDA":
         return "Concluído";
       case "RECUSADO":
+      case "RECUSADA":
         return "Recusado";
       default:
-        return status;
+        return status || "Não informado";
     }
   };
 
   const classeStatus = (status) => {
-    switch (status) {
+    switch (normalizarStatus(status)) {
       case "PENDENTE":
         return "status-pendente";
 
       case "EM_ANALISE":
       case "VISITA_AGENDADA":
+      case "APROVADO":
+      case "APROVADA":
         return "status-analise";
 
-      case "APROVADO":
       case "CONCLUIDO":
+      case "CONCLUIDA":
         return "status-concluido";
 
       case "RECUSADO":
+      case "RECUSADA":
         return "status-recusado";
 
       default:
@@ -76,41 +113,63 @@ function AdminSolicitacoes() {
     }
   };
 
+  const formatarData = (data) => {
+    if (!data) return "Não informada";
+
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(data)) {
+      return data;
+    }
+
+    const dataObj = new Date(data);
+
+    if (Number.isNaN(dataObj.getTime())) {
+      return "Não informada";
+    }
+
+    return dataObj.toLocaleDateString("pt-BR", {
+      timeZone: "UTC",
+    });
+  };
+
   const totalPendentes = solicitacoes.filter(
-    (item) => item.status === "PENDENTE"
+    (item) => normalizarStatus(item.status) === "PENDENTE"
   ).length;
 
-  const totalAnalise = solicitacoes.filter(
-    (item) =>
-      item.status === "EM_ANALISE" ||
-      item.status === "VISITA_AGENDADA"
+  const totalAnalise = solicitacoes.filter((item) =>
+    ["EM_ANALISE", "VISITA_AGENDADA"].includes(
+      normalizarStatus(item.status)
+    )
   ).length;
 
-  const totalConcluidas = solicitacoes.filter(
-    (item) =>
-      item.status === "CONCLUIDO" ||
-      item.status === "APROVADO"
+  const totalConcluidas = solicitacoes.filter((item) =>
+    ["CONCLUIDO", "CONCLUIDA"].includes(
+      normalizarStatus(item.status)
+    )
   ).length;
 
   const solicitacoesFiltradas = solicitacoes.filter((item) => {
+    const status = normalizarStatus(item.status);
+
     const correspondeStatus =
       filtroStatus === "TODAS" ||
-      item.status === filtroStatus ||
+      status === filtroStatus ||
       (filtroStatus === "ANALISE" &&
-        (item.status === "EM_ANALISE" ||
-          item.status === "VISITA_AGENDADA")) ||
+        ["EM_ANALISE", "VISITA_AGENDADA"].includes(status)) ||
+      (filtroStatus === "APROVADAS" &&
+        ["APROVADO", "APROVADA"].includes(status)) ||
       (filtroStatus === "CONCLUIDAS" &&
-        (item.status === "CONCLUIDO" ||
-          item.status === "APROVADO"));
+        ["CONCLUIDO", "CONCLUIDA"].includes(status)) ||
+      (filtroStatus === "RECUSADAS" &&
+        ["RECUSADO", "RECUSADA"].includes(status));
 
     const termo = busca.toLowerCase().trim();
 
     const correspondeBusca =
       termo === "" ||
-      item.protocolo.toLowerCase().includes(termo) ||
-      item.nomeCompleto.toLowerCase().includes(termo) ||
-      item.bairro.toLowerCase().includes(termo) ||
-      item.ruaAvenida.toLowerCase().includes(termo);
+      String(item.protocolo || "").toLowerCase().includes(termo) ||
+      String(item.nomeCompleto || "").toLowerCase().includes(termo) ||
+      String(item.bairro || "").toLowerCase().includes(termo) ||
+      String(item.ruaAvenida || "").toLowerCase().includes(termo);
 
     return correspondeStatus && correspondeBusca;
   });
@@ -119,9 +178,7 @@ function AdminSolicitacoes() {
     <main className="admin-solicitacoes-page">
       <div className="admin-solicitacoes-container">
         <div className="admin-solicitacoes-voltar">
-          <Link to="/admin">
-            ← Voltar ao painel
-          </Link>
+          <Link to="/admin">← Voltar ao painel</Link>
         </div>
 
         <section className="admin-solicitacoes-topo">
@@ -139,10 +196,7 @@ function AdminSolicitacoes() {
 
         <section className="admin-solicitacoes-resumo">
           <div className="admin-solicitacoes-resumo-card">
-            <div className="admin-solicitacoes-resumo-icon">
-              🌱
-            </div>
-
+            <div className="admin-solicitacoes-resumo-icon">🌱</div>
             <div>
               <strong>{solicitacoes.length}</strong>
               <span>Total</span>
@@ -150,10 +204,7 @@ function AdminSolicitacoes() {
           </div>
 
           <div className="admin-solicitacoes-resumo-card">
-            <div className="admin-solicitacoes-resumo-icon">
-              ⏳
-            </div>
-
+            <div className="admin-solicitacoes-resumo-icon">⏳</div>
             <div>
               <strong>{totalPendentes}</strong>
               <span>Pendentes</span>
@@ -161,10 +212,7 @@ function AdminSolicitacoes() {
           </div>
 
           <div className="admin-solicitacoes-resumo-card">
-            <div className="admin-solicitacoes-resumo-icon">
-              🔎
-            </div>
-
+            <div className="admin-solicitacoes-resumo-icon">🔎</div>
             <div>
               <strong>{totalAnalise}</strong>
               <span>Em análise</span>
@@ -172,10 +220,7 @@ function AdminSolicitacoes() {
           </div>
 
           <div className="admin-solicitacoes-resumo-card">
-            <div className="admin-solicitacoes-resumo-icon">
-              🌳
-            </div>
-
+            <div className="admin-solicitacoes-resumo-icon">🌳</div>
             <div>
               <strong>{totalConcluidas}</strong>
               <span>Concluídas</span>
@@ -202,9 +247,7 @@ function AdminSolicitacoes() {
             <div className="admin-solicitacoes-filtros">
               <button
                 type="button"
-                className={
-                  filtroStatus === "TODAS" ? "ativo" : ""
-                }
+                className={filtroStatus === "TODAS" ? "ativo" : ""}
                 onClick={() => setFiltroStatus("TODAS")}
               >
                 Todas
@@ -212,9 +255,7 @@ function AdminSolicitacoes() {
 
               <button
                 type="button"
-                className={
-                  filtroStatus === "PENDENTE" ? "ativo" : ""
-                }
+                className={filtroStatus === "PENDENTE" ? "ativo" : ""}
                 onClick={() => setFiltroStatus("PENDENTE")}
               >
                 Pendentes
@@ -222,9 +263,7 @@ function AdminSolicitacoes() {
 
               <button
                 type="button"
-                className={
-                  filtroStatus === "ANALISE" ? "ativo" : ""
-                }
+                className={filtroStatus === "ANALISE" ? "ativo" : ""}
                 onClick={() => setFiltroStatus("ANALISE")}
               >
                 Em análise
@@ -232,9 +271,15 @@ function AdminSolicitacoes() {
 
               <button
                 type="button"
-                className={
-                  filtroStatus === "CONCLUIDAS" ? "ativo" : ""
-                }
+                className={filtroStatus === "APROVADAS" ? "ativo" : ""}
+                onClick={() => setFiltroStatus("APROVADAS")}
+              >
+                Aprovadas
+              </button>
+
+              <button
+                type="button"
+                className={filtroStatus === "CONCLUIDAS" ? "ativo" : ""}
                 onClick={() => setFiltroStatus("CONCLUIDAS")}
               >
                 Concluídas
@@ -242,10 +287,8 @@ function AdminSolicitacoes() {
 
               <button
                 type="button"
-                className={
-                  filtroStatus === "RECUSADO" ? "ativo" : ""
-                }
-                onClick={() => setFiltroStatus("RECUSADO")}
+                className={filtroStatus === "RECUSADAS" ? "ativo" : ""}
+                onClick={() => setFiltroStatus("RECUSADAS")}
               >
                 Recusadas
               </button>
@@ -253,62 +296,78 @@ function AdminSolicitacoes() {
           </div>
 
           <div className="admin-solicitacoes-lista">
-            {solicitacoesFiltradas.length === 0 && (
+            {carregando && (
               <div className="admin-solicitacoes-vazio">
-                Nenhuma solicitação encontrada.
+                Carregando solicitações...
               </div>
             )}
 
-            {solicitacoesFiltradas.map((item) => (
-              <article
-                key={item.id}
-                className="admin-solicitacao-item"
-              >
-                <div className="admin-solicitacao-principal">
-                  <div className="admin-solicitacao-icon">
-                    🌱
+            {!carregando && erro && (
+              <div className="admin-solicitacoes-vazio">
+                {erro}
+              </div>
+            )}
+
+            {!carregando &&
+              !erro &&
+              solicitacoesFiltradas.length === 0 && (
+                <div className="admin-solicitacoes-vazio">
+                  Nenhuma solicitação encontrada.
+                </div>
+              )}
+
+            {!carregando &&
+              !erro &&
+              solicitacoesFiltradas.map((item) => (
+                <article
+                  key={item.id}
+                  className="admin-solicitacao-item"
+                >
+                  <div className="admin-solicitacao-principal">
+                    <div className="admin-solicitacao-icon">🌱</div>
+
+                    <div>
+                      <span>Protocolo</span>
+                      <h3>{item.protocolo || "Não informado"}</h3>
+                      <p>
+                        {item.nomeCompleto || "Usuário não informado"}
+                      </p>
+                    </div>
                   </div>
 
-                  <div>
-                    <span>Protocolo</span>
-                    <h3>{item.protocolo}</h3>
-                    <p>{item.nomeCompleto}</p>
+                  <div className="admin-solicitacao-dado">
+                    <span>Bairro</span>
+                    <strong>{item.bairro || "Não informado"}</strong>
                   </div>
-                </div>
 
-                <div className="admin-solicitacao-dado">
-                  <span>Bairro</span>
-                  <strong>{item.bairro}</strong>
-                </div>
+                  <div className="admin-solicitacao-dado">
+                    <span>Local</span>
+                    <strong>{item.ruaAvenida || "Não informado"}</strong>
+                  </div>
 
-                <div className="admin-solicitacao-dado">
-                  <span>Local</span>
-                  <strong>{item.ruaAvenida}</strong>
-                </div>
+                  <div className="admin-solicitacao-dado">
+                    <span>Data</span>
+                    <strong>{formatarData(item.dataSolicitacao)}</strong>
+                  </div>
 
-                <div className="admin-solicitacao-dado">
-                  <span>Data</span>
-                  <strong>{item.dataSolicitacao}</strong>
-                </div>
+                  <div className="admin-solicitacao-final">
+                    <span
+                      className={`admin-solicitacao-status ${classeStatus(
+                        item.status
+                      )}`}
+                    >
+                      {traduzirStatus(item.status)}
+                    </span>
 
-                <div className="admin-solicitacao-final">
-                  <span
-                    className={`admin-solicitacao-status ${classeStatus(
-                      item.status
-                    )}`}
-                  >
-                    {traduzirStatus(item.status)}
-                  </span>
-
-                  <Link
-                    to={`/admin/solicitacoes/${item.id}`}
-                    className="admin-solicitacao-visualizar"
-                  >
-                    Visualizar
-                  </Link>
-                </div>
-              </article>
-            ))}
+                    <Link
+                      to={`/admin/solicitacoes/${item.id}`}
+                      className="admin-solicitacao-visualizar"
+                    >
+                      Visualizar
+                    </Link>
+                  </div>
+                </article>
+              ))}
           </div>
         </section>
       </div>

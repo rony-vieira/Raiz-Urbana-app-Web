@@ -1,4 +1,5 @@
-import { useState } from "react";
+
+import { useEffect, useState } from "react";
 import API_URL from "../services/api";
 import "./SolicitarPlantio.css";
 
@@ -19,14 +20,10 @@ function SolicitarPlantio() {
   };
 
   const [formulario, setFormulario] = useState(formularioInicial);
-
+  const [carregandoPerfil, setCarregandoPerfil] = useState(true);
   const [carregandoCep, setCarregandoCep] = useState(false);
   const [erroCep, setErroCep] = useState("");
   const [enviando, setEnviando] = useState(false);
-
-  // =========================
-  // MÁSCARAS
-  // =========================
 
   const formatarCPF = (valor) => {
     valor = valor.replace(/\D/g, "").slice(0, 11);
@@ -95,9 +92,94 @@ function SolicitarPlantio() {
     return valor;
   };
 
-  // =========================
-  // ALTERAÇÃO DOS CAMPOS
-  // =========================
+  const obterAutenticacao = () => {
+    const usuarioSession = sessionStorage.getItem("usuarioLogado");
+    const tokenSession = sessionStorage.getItem("token");
+
+    if (usuarioSession && tokenSession) {
+      return {
+        usuarioSalvo: usuarioSession,
+        token: tokenSession,
+      };
+    }
+
+    const usuarioLocal = localStorage.getItem("usuarioLogado");
+    const tokenLocal = localStorage.getItem("token");
+
+    if (usuarioLocal && tokenLocal) {
+      return {
+        usuarioSalvo: usuarioLocal,
+        token: tokenLocal,
+      };
+    }
+
+    return null;
+  };
+
+  useEffect(() => {
+    const carregarDadosPerfil = async () => {
+      const autenticacao = obterAutenticacao();
+
+      if (!autenticacao) {
+        setCarregandoPerfil(false);
+        return;
+      }
+
+      try {
+        const resposta = await fetch(
+          `${API_URL}/api/usuarios/me`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${autenticacao.token}`,
+            },
+          }
+        );
+
+        if (resposta.status === 401) {
+          throw new Error(
+            "Sua sessão expirou. Faça login novamente."
+          );
+        }
+
+        if (resposta.status === 403) {
+          throw new Error(
+            "Você não possui permissão para acessar esses dados."
+          );
+        }
+
+        if (!resposta.ok) {
+          throw new Error(
+            "Não foi possível carregar os dados do perfil."
+          );
+        }
+
+        const perfil = await resposta.json();
+
+        setFormulario((anterior) => ({
+          ...anterior,
+          nome: perfil.nomeCompleto || "",
+          cpf: formatarCPF(perfil.cpf || ""),
+          telefone: formatarTelefone(perfil.telefone || ""),
+          email: perfil.email || "",
+        }));
+      } catch (erro) {
+        console.error(
+          "Erro ao carregar dados do perfil:",
+          erro
+        );
+
+        alert(
+          erro.message ||
+            "Não foi possível carregar seus dados pessoais."
+        );
+      } finally {
+        setCarregandoPerfil(false);
+      }
+    };
+
+    carregarDadosPerfil();
+  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -130,10 +212,6 @@ function SolicitarPlantio() {
     }
   };
 
-  // =========================
-  // VIA CEP
-  // =========================
-
   const buscarCEP = async (cep) => {
     const cepNumeros = cep.replace(/\D/g, "");
 
@@ -150,9 +228,7 @@ function SolicitarPlantio() {
       );
 
       if (!resposta.ok) {
-        throw new Error(
-          "Erro na consulta do CEP"
-        );
+        throw new Error("Erro na consulta do CEP");
       }
 
       const dados = await resposta.json();
@@ -175,10 +251,7 @@ function SolicitarPlantio() {
         bairro: dados.bairro || "",
       }));
     } catch (erro) {
-      console.error(
-        "Erro ao consultar CEP:",
-        erro
-      );
+      console.error("Erro ao consultar CEP:", erro);
 
       setErroCep(
         "Não foi possível consultar o CEP."
@@ -187,10 +260,6 @@ function SolicitarPlantio() {
       setCarregandoCep(false);
     }
   };
-
-  // =========================
-  // FOTO
-  // =========================
 
   const handleFoto = (e) => {
     const arquivo = e.target.files?.[0];
@@ -203,44 +272,6 @@ function SolicitarPlantio() {
     }
   };
 
-  // =========================
-  // AUTENTICAÇÃO
-  // =========================
-
-  const obterAutenticacao = () => {
-    const usuarioSession =
-      sessionStorage.getItem("usuarioLogado");
-
-    const tokenSession =
-      sessionStorage.getItem("token");
-
-    if (usuarioSession && tokenSession) {
-      return {
-        usuarioSalvo: usuarioSession,
-        token: tokenSession,
-      };
-    }
-
-    const usuarioLocal =
-      localStorage.getItem("usuarioLogado");
-
-    const tokenLocal =
-      localStorage.getItem("token");
-
-    if (usuarioLocal && tokenLocal) {
-      return {
-        usuarioSalvo: usuarioLocal,
-        token: tokenLocal,
-      };
-    }
-
-    return null;
-  };
-
-  // =========================
-  // ENVIO DO FORMULÁRIO
-  // =========================
-
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -250,7 +281,6 @@ function SolicitarPlantio() {
       alert(
         "Você precisa estar logado para solicitar um plantio."
       );
-
       return;
     }
 
@@ -264,7 +294,6 @@ function SolicitarPlantio() {
       alert(
         "Erro ao identificar o usuário logado. Faça login novamente."
       );
-
       return;
     }
 
@@ -272,7 +301,6 @@ function SolicitarPlantio() {
       alert(
         "Não foi possível identificar o usuário. Faça login novamente."
       );
-
       return;
     }
 
@@ -280,7 +308,6 @@ function SolicitarPlantio() {
       alert(
         "Somente usuários podem solicitar plantio."
       );
-
       return;
     }
 
@@ -288,15 +315,12 @@ function SolicitarPlantio() {
       alert(
         "É obrigatório enviar uma foto do local."
       );
-
       return;
     }
 
     setEnviando(true);
 
     try {
-      // O usuarioId NÃO é enviado.
-      // O backend identifica o usuário através do JWT.
       const dadosEnvio = {
         nomeCompleto: formulario.nome,
         cpf: formulario.cpf,
@@ -306,11 +330,9 @@ function SolicitarPlantio() {
         bairro: formulario.bairro,
         ruaAvenida: formulario.rua,
         numero: formulario.numero || "",
-        pontoReferencia:
-          formulario.referencia || "",
+        pontoReferencia: formulario.referencia || "",
         tipoLocal: formulario.tipoLocal,
-        observacoes:
-          formulario.observacoes || "",
+        observacoes: formulario.observacoes || "",
       };
 
       const formData = new FormData();
@@ -325,21 +347,15 @@ function SolicitarPlantio() {
         )
       );
 
-      formData.append(
-        "foto",
-        formulario.foto
-      );
+      formData.append("foto", formulario.foto);
 
       const resposta = await fetch(
         `${API_URL}/api/solicitacoes`,
         {
           method: "POST",
-
           headers: {
-            Authorization:
-              `Bearer ${autenticacao.token}`,
+            Authorization: `Bearer ${autenticacao.token}`,
           },
-
           body: formData,
         }
       );
@@ -357,8 +373,7 @@ function SolicitarPlantio() {
       }
 
       if (!resposta.ok) {
-        const erroBackend =
-          await resposta.text();
+        const erroBackend = await resposta.text();
 
         console.error(
           "Erro do backend:",
@@ -367,28 +382,23 @@ function SolicitarPlantio() {
         );
 
         throw new Error(
-          erroBackend ||
-            "Erro ao processar solicitação."
+          erroBackend || "Erro ao processar solicitação."
         );
       }
 
-      const respostaJson =
-        await resposta.json();
+      const respostaJson = await resposta.json();
 
       alert(
         `🎉 Solicitação cadastrada com sucesso!\nSeu protocolo é: ${respostaJson.protocolo}`
       );
 
-      // Limpa todos os campos.
       setFormulario({
         ...formularioInicial,
       });
 
       setErroCep("");
 
-      // Limpa também visualmente o input file.
-      const inputFoto =
-        document.getElementById("foto");
+      const inputFoto = document.getElementById("foto");
 
       if (inputFoto) {
         inputFoto.value = "";
@@ -410,10 +420,6 @@ function SolicitarPlantio() {
 
   return (
     <main className="solicitar-page">
-      {/* =========================
-          CABEÇALHO DA PÁGINA
-      ========================== */}
-
       <section className="solicitar-intro">
         <h1>Solicitar Plantio de Árvore</h1>
 
@@ -424,14 +430,8 @@ function SolicitarPlantio() {
         </p>
       </section>
 
-      {/* =========================
-          AVISO
-      ========================== */}
-
       <section className="novidade-card">
-        <div className="novidade-icone">
-          📷
-        </div>
+        <div className="novidade-icone">📷</div>
 
         <div>
           <h2>Novidade!</h2>
@@ -444,22 +444,18 @@ function SolicitarPlantio() {
         </div>
       </section>
 
-      {/* =========================
-          FORMULÁRIO
-      ========================== */}
-
       <form
         className="plantio-form"
         onSubmit={handleSubmit}
       >
-        {/* =========================
-            1. DADOS PESSOAIS
-        ========================== */}
-
         <section className="form-section">
           <div className="section-title">
             <h2>Dados Pessoais</h2>
           </div>
+
+          {carregandoPerfil && (
+            <p>Carregando seus dados pessoais...</p>
+          )}
 
           <div className="form-grid">
             <div className="form-group full-width">
@@ -530,16 +526,10 @@ function SolicitarPlantio() {
           </div>
         </section>
 
-        {/* =========================
-            2. ENDEREÇO
-        ========================== */}
-
         <section className="form-section">
           <div className="section-title">
             <h2>
-              <span className="location-icon">
-                📍
-              </span>
+              <span className="location-icon">📍</span>
               Endereço do Plantio
             </h2>
           </div>
@@ -607,9 +597,7 @@ function SolicitarPlantio() {
             </div>
 
             <div className="form-group">
-              <label htmlFor="numero">
-                Número
-              </label>
+              <label htmlFor="numero">Número</label>
 
               <input
                 type="text"
@@ -627,8 +615,7 @@ function SolicitarPlantio() {
 
             <div className="form-group">
               <label htmlFor="referencia">
-                Ponto de Referência{" "}
-                <span>*</span>
+                Ponto de Referência <span>*</span>
               </label>
 
               <input
@@ -662,21 +649,10 @@ function SolicitarPlantio() {
                   Calçada em frente a comércio
                 </option>
 
-                <option value="Praça">
-                  Praça
-                </option>
-
-                <option value="Parque">
-                  Parque
-                </option>
-
-                <option value="Área pública">
-                  Área pública
-                </option>
-
-                <option value="Outro">
-                  Outro
-                </option>
+                <option value="Praça">Praça</option>
+                <option value="Parque">Parque</option>
+                <option value="Área pública">Área pública</option>
+                <option value="Outro">Outro</option>
               </select>
             </div>
 
@@ -697,28 +673,18 @@ function SolicitarPlantio() {
           </div>
         </section>
 
-        {/* =========================
-            3. FOTO
-        ========================== */}
-
         <section className="form-section">
           <div className="section-title">
             <h2>
               Foto do Local{" "}
-              <span className="required-title">
-                *
-              </span>
+              <span className="required-title">*</span>
             </h2>
           </div>
 
           <div className="foto-upload">
-            <div className="foto-icone">
-              📷
-            </div>
+            <div className="foto-icone">📷</div>
 
-            <h3>
-              Envie uma foto do local
-            </h3>
+            <h3>Envie uma foto do local</h3>
 
             <p>
               Tire uma foto do local onde deseja o plantio da árvore.
@@ -748,16 +714,11 @@ function SolicitarPlantio() {
 
             {formulario.foto && (
               <p className="foto-selecionada">
-                ✓ Foto selecionada:{" "}
-                {formulario.foto.name}
+                ✓ Foto selecionada: {formulario.foto.name}
               </p>
             )}
           </div>
         </section>
-
-        {/* =========================
-            BOTÃO
-        ========================== */}
 
         <div className="form-footer">
           <p>
@@ -767,11 +728,13 @@ function SolicitarPlantio() {
           <button
             type="submit"
             className="btn-enviar"
-            disabled={enviando}
+            disabled={enviando || carregandoPerfil}
           >
-            {enviando
-              ? "Enviando..."
-              : "Enviar Solicitação"}
+            {carregandoPerfil
+              ? "Carregando dados..."
+              : enviando
+                ? "Enviando..."
+                : "Enviar Solicitação"}
           </button>
         </div>
       </form>

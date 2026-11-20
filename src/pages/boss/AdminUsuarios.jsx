@@ -1,3 +1,4 @@
+
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import API_URL from "../../services/api";
@@ -10,61 +11,40 @@ function AdminUsuarios() {
   const [usuarios, setUsuarios] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
+  const [tentativa, setTentativa] = useState(0);
 
   useEffect(() => {
+    let ativo = true;
+
     async function carregarUsuarios() {
       try {
         setCarregando(true);
         setErro("");
 
-        const usuarioSalvo =
-          localStorage.getItem("usuarioLogado") ||
-          sessionStorage.getItem("usuarioLogado");
-
         const token =
-          localStorage.getItem("token") ||
-          sessionStorage.getItem("token");
+          sessionStorage.getItem("token") ||
+          localStorage.getItem("token");
 
-        if (!usuarioSalvo || !token) {
+        if (!token) {
           navigate("/login");
           return;
         }
 
-        let usuarioLogado;
+        const resposta = await fetch(`${API_URL}/api/usuarios`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+          },
+        });
 
-        try {
-          usuarioLogado = JSON.parse(usuarioSalvo);
-        } catch {
-          localStorage.removeItem("usuarioLogado");
-          localStorage.removeItem("token");
-          sessionStorage.removeItem("usuarioLogado");
-          sessionStorage.removeItem("token");
-
-          navigate("/login");
-          return;
-        }
-
-        if (usuarioLogado.tipo !== "BOSS") {
-          navigate("/");
-          return;
-        }
-
-        const resposta = await fetch(
-          `${API_URL}/api/usuarios`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              Accept: "application/json",
-            },
-          }
-        );
+        if (!ativo) return;
 
         if (resposta.status === 401) {
-          localStorage.removeItem("usuarioLogado");
-          localStorage.removeItem("token");
           sessionStorage.removeItem("usuarioLogado");
+          localStorage.removeItem("usuarioLogado");
           sessionStorage.removeItem("token");
+          localStorage.removeItem("token");
 
           navigate("/login");
           return;
@@ -88,7 +68,8 @@ function AdminUsuarios() {
               dadosErro?.mensagem ||
               mensagemErro;
           } catch {
-            // Mantém a mensagem padrão.
+            mensagemErro =
+              "Não foi possível carregar os usuários.";
           }
 
           throw new Error(mensagemErro);
@@ -96,28 +77,35 @@ function AdminUsuarios() {
 
         const dados = await resposta.json();
 
+        if (!ativo) return;
+
         if (Array.isArray(dados)) {
           setUsuarios(dados);
         } else {
           setUsuarios([]);
         }
       } catch (error) {
-        console.error(
-          "Erro ao carregar usuários:",
-          error
-        );
+        console.error("Erro ao carregar usuários:", error);
 
-        setErro(
-          error.message ||
-            "Não foi possível carregar os usuários."
-        );
+        if (ativo) {
+          setErro(
+            error.message ||
+              "Não foi possível carregar os usuários."
+          );
+        }
       } finally {
-        setCarregando(false);
+        if (ativo) {
+          setCarregando(false);
+        }
       }
     }
 
     carregarUsuarios();
-  }, [navigate]);
+
+    return () => {
+      ativo = false;
+    };
+  }, [navigate, tentativa]);
 
   const formatarTipo = (tipo) => {
     switch (tipo) {
@@ -130,44 +118,28 @@ function AdminUsuarios() {
       case "BOSS":
         return "Boss";
 
+      case "EMPRESA_PARCEIRA":
+        return "Empresa parceira";
+
       default:
         return tipo || "Não informado";
     }
   };
 
   const usuariosFiltrados = useMemo(() => {
-    const termo = busca
-      .toLowerCase()
-      .trim();
+    const termo = busca.toLowerCase().trim();
 
     if (!termo) {
       return usuarios;
     }
 
     return usuarios.filter((usuario) => {
-      const nome = (
-        usuario.nomeCompleto || ""
-      ).toLowerCase();
-
-      const cpf = (
-        usuario.cpf || ""
-      ).toLowerCase();
-
-      const email = (
-        usuario.email || ""
-      ).toLowerCase();
-
-      const bairro = (
-        usuario.bairro || ""
-      ).toLowerCase();
-
-      const bairroAtuacao = (
-        usuario.bairroAtuacao || ""
-      ).toLowerCase();
-
-      const tipo = (
-        usuario.tipo || ""
-      ).toLowerCase();
+      const nome = (usuario.nomeCompleto || "").toLowerCase();
+      const cpf = (usuario.cpf || "").toLowerCase();
+      const email = (usuario.email || "").toLowerCase();
+      const bairro = (usuario.bairro || "").toLowerCase();
+      const bairroAtuacao = (usuario.bairroAtuacao || "").toLowerCase();
+      const tipo = (usuario.tipo || "").toLowerCase();
 
       return (
         nome.includes(termo) ||
@@ -191,14 +163,8 @@ function AdminUsuarios() {
   const bairrosComUsuarios = new Set(
     usuarios
       .map((usuario) => usuario.bairro)
-      .filter(
-        (bairro) =>
-          bairro &&
-          bairro.trim() !== ""
-      )
-      .map((bairro) =>
-        bairro.trim().toLowerCase()
-      )
+      .filter((bairro) => bairro && bairro.trim() !== "")
+      .map((bairro) => bairro.trim().toLowerCase())
   ).size;
 
   if (carregando) {
@@ -262,13 +228,8 @@ function AdminUsuarios() {
             </div>
 
             <div>
-              <strong>
-                {usuarios.length}
-              </strong>
-
-              <span>
-                Contas cadastradas
-              </span>
+              <strong>{usuarios.length}</strong>
+              <span>Contas cadastradas</span>
             </div>
           </div>
 
@@ -278,13 +239,8 @@ function AdminUsuarios() {
             </div>
 
             <div>
-              <strong>
-                {totalUsuarios}
-              </strong>
-
-              <span>
-                Usuários
-              </span>
+              <strong>{totalUsuarios}</strong>
+              <span>Usuários</span>
             </div>
           </div>
 
@@ -294,13 +250,8 @@ function AdminUsuarios() {
             </div>
 
             <div>
-              <strong>
-                {totalGestores}
-              </strong>
-
-              <span>
-                Gestores
-              </span>
+              <strong>{totalGestores}</strong>
+              <span>Gestores</span>
             </div>
           </div>
 
@@ -310,13 +261,8 @@ function AdminUsuarios() {
             </div>
 
             <div>
-              <strong>
-                {bairrosComUsuarios}
-              </strong>
-
-              <span>
-                Bairros com usuários
-              </span>
+              <strong>{bairrosComUsuarios}</strong>
+              <span>Bairros com usuários</span>
             </div>
           </div>
         </section>
@@ -324,9 +270,7 @@ function AdminUsuarios() {
         <section className="admin-usuarios-card">
           <div className="admin-usuarios-ferramentas">
             <div>
-              <h2>
-                Contas cadastradas
-              </h2>
+              <h2>Contas cadastradas</h2>
 
               <p>
                 Pesquise e visualize os dados das contas.
@@ -342,9 +286,7 @@ function AdminUsuarios() {
                 type="text"
                 id="buscaUsuario"
                 value={busca}
-                onChange={(e) =>
-                  setBusca(e.target.value)
-                }
+                onChange={(e) => setBusca(e.target.value)}
                 placeholder="Nome, CPF, e-mail, bairro ou tipo"
               />
             </div>
@@ -356,15 +298,11 @@ function AdminUsuarios() {
                 Não foi possível carregar os usuários.
               </strong>
 
-              <p>
-                {erro}
-              </p>
+              <p>{erro}</p>
 
               <button
                 type="button"
-                onClick={() =>
-                  window.location.reload()
-                }
+                onClick={() => setTentativa((anterior) => anterior + 1)}
               >
                 Tentar novamente
               </button>
@@ -389,8 +327,8 @@ function AdminUsuarios() {
                       {usuario.tipo === "BOSS"
                         ? "👑"
                         : usuario.tipo === "GESTOR"
-                        ? "🛡️"
-                        : "👤"}
+                          ? "🛡️"
+                          : "👤"}
                     </div>
 
                     <div>
@@ -410,8 +348,7 @@ function AdminUsuarios() {
                     <span>CPF</span>
 
                     <strong>
-                      {usuario.cpf ||
-                        "Não informado"}
+                      {usuario.cpf || "Não informado"}
                     </strong>
                   </div>
 
@@ -419,8 +356,7 @@ function AdminUsuarios() {
                     <span>Bairro</span>
 
                     <strong>
-                      {usuario.bairro ||
-                        "Não informado"}
+                      {usuario.bairro || "Não informado"}
                     </strong>
                   </div>
 
@@ -438,8 +374,7 @@ function AdminUsuarios() {
                     {usuario.tipo === "GESTOR" &&
                       usuario.bairroAtuacao && (
                         <small className="admin-usuario-bairro-atuacao">
-                          Atua em:{" "}
-                          {usuario.bairroAtuacao}
+                          Atua em: {usuario.bairroAtuacao}
                         </small>
                       )}
                   </div>

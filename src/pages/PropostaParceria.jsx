@@ -1,4 +1,5 @@
-import { useState } from "react";
+
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import API_URL from "../services/api";
 import "./PropostaParceria.css";
@@ -25,6 +26,7 @@ function PropostaParceria() {
   const navigate = useNavigate();
 
   const [form, setForm] = useState(FORM_INICIAL);
+  const [carregandoPerfil, setCarregandoPerfil] = useState(true);
   const [buscandoCep, setBuscandoCep] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [mensagemSucesso, setMensagemSucesso] = useState("");
@@ -60,6 +62,95 @@ function PropostaParceria() {
       .replace(/^(\d{2})(\d)/, "($1) $2")
       .replace(/(\d{5})(\d)/, "$1-$2");
   };
+
+  const obterToken = () => {
+    return (
+      localStorage.getItem("token") ||
+      sessionStorage.getItem("token")
+    );
+  };
+
+  useEffect(() => {
+    const carregarDadosEmpresa = async () => {
+      const token = obterToken();
+
+      if (!token) {
+        setCarregandoPerfil(false);
+        setMensagemErro(
+          "Sua sessão expirou. Faça login para carregar os dados da empresa."
+        );
+        return;
+      }
+
+      try {
+        const resposta = await fetch(
+          `${API_URL.replace(/\/$/, "")}/api/usuarios/me`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (resposta.status === 401) {
+          throw new Error(
+            "Sua sessão expirou. Faça login novamente."
+          );
+        }
+
+        if (resposta.status === 403) {
+          throw new Error(
+            "Você não possui permissão para acessar esses dados."
+          );
+        }
+
+        if (!resposta.ok) {
+          throw new Error(
+            "Não foi possível carregar os dados da empresa."
+          );
+        }
+
+        const perfil = await resposta.json();
+
+        if (perfil.tipo !== "EMPRESA_PARCEIRA") {
+          throw new Error(
+            "Esta página é exclusiva para empresas parceiras."
+          );
+        }
+
+        setForm((anterior) => ({
+          ...anterior,
+          razaoSocial: perfil.razaoSocial || "",
+          nomeFantasia: perfil.nomeFantasia || "",
+          cnpj: formatarCNPJ(perfil.cnpj || ""),
+          responsavel: perfil.nomeCompleto || "",
+          email: perfil.email || "",
+          telefone: formatarTelefone(perfil.telefone || ""),
+          cep: formatarCEP(perfil.cep || ""),
+          numero: perfil.numero || "",
+          rua: perfil.rua || "",
+          bairro: perfil.bairro || "",
+          cidade: perfil.cidade || "",
+          estado: perfil.estado || "",
+        }));
+      } catch (erro) {
+        console.error(
+          "Erro ao carregar dados da empresa:",
+          erro
+        );
+
+        setMensagemErro(
+          erro.message ||
+            "Não foi possível carregar os dados da empresa."
+        );
+      } finally {
+        setCarregandoPerfil(false);
+      }
+    };
+
+    carregarDadosEmpresa();
+  }, []);
 
   const validarCNPJ = (cnpj) => {
     const numeros = somenteNumeros(cnpj);
@@ -126,7 +217,9 @@ function PropostaParceria() {
           estado: "",
         }));
 
-        setMensagemErro("CEP não encontrado. Confira o número informado.");
+        setMensagemErro(
+          "CEP não encontrado. Confira o número informado."
+        );
         return;
       }
 
@@ -211,6 +304,13 @@ function PropostaParceria() {
     setMensagemErro("");
     setMensagemSucesso("");
 
+    if (carregandoPerfil) {
+      setMensagemErro(
+        "Aguarde o carregamento dos dados da empresa."
+      );
+      return;
+    }
+
     if (buscandoCep) {
       setMensagemErro("Aguarde a consulta do CEP terminar.");
       return;
@@ -265,12 +365,12 @@ function PropostaParceria() {
       return;
     }
 
-    const token =
-      localStorage.getItem("token") ||
-      sessionStorage.getItem("token");
+    const token = obterToken();
 
     if (!token) {
-      setMensagemErro("Sua sessão expirou. Faça login para continuar.");
+      setMensagemErro(
+        "Sua sessão expirou. Faça login para continuar."
+      );
 
       navigate("/login", {
         state: { from: "/parcerias/proposta" },
@@ -350,6 +450,7 @@ function PropostaParceria() {
       }
 
       setForm(FORM_INICIAL);
+
       setMensagemSucesso(
         "Sua proposta foi enviada com sucesso! A equipe do Raiz Urbana irá analisá-la. Você poderá acompanhar o andamento no seu perfil."
       );
@@ -357,6 +458,7 @@ function PropostaParceria() {
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (erro) {
       console.error("Erro ao enviar proposta:", erro);
+
       setMensagemErro(
         erro.message || "Não foi possível enviar a proposta."
       );
@@ -381,6 +483,10 @@ function PropostaParceria() {
           </p>
         </div>
 
+        {carregandoPerfil && (
+          <p>Carregando os dados da sua empresa...</p>
+        )}
+
         {mensagemSucesso && (
           <div
             className="proposta-mensagem-sucesso"
@@ -389,10 +495,12 @@ function PropostaParceria() {
           >
             <strong>Proposta recebida!</strong>
             <p>{mensagemSucesso}</p>
+
             <div className="proposta-mensagem-acoes">
               <Link to="/perfil" className="proposta-enviar">
                 Acompanhar no perfil
               </Link>
+
               <Link to="/" className="proposta-cancelar">
                 Voltar ao início
               </Link>
@@ -600,6 +708,7 @@ function PropostaParceria() {
                   <label htmlFor="tipoParceria">
                     Tipo de parceria
                   </label>
+
                   <select
                     id="tipoParceria"
                     name="tipoParceria"
@@ -626,6 +735,7 @@ function PropostaParceria() {
                   <label htmlFor="descricao">
                     Descrição da proposta
                   </label>
+
                   <textarea
                     id="descricao"
                     name="descricao"
@@ -648,6 +758,7 @@ function PropostaParceria() {
                   onChange={handleChange}
                   required
                 />
+
                 <span>
                   Confirmo que as informações fornecidas são
                   verdadeiras e autorizo a equipe do Raiz Urbana a
@@ -664,9 +775,17 @@ function PropostaParceria() {
               <button
                 type="submit"
                 className="proposta-enviar"
-                disabled={enviando || buscandoCep}
+                disabled={
+                  enviando ||
+                  buscandoCep ||
+                  carregandoPerfil
+                }
               >
-                {enviando ? "Enviando..." : "Enviar proposta"}
+                {carregandoPerfil
+                  ? "Carregando dados..."
+                  : enviando
+                    ? "Enviando..."
+                    : "Enviar proposta"}
               </button>
             </div>
           </form>

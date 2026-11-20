@@ -1,5 +1,6 @@
+
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import "./AdminPropostaDetalhes.css";
 
 const API_URL = (
@@ -8,6 +9,12 @@ const API_URL = (
 
 function obterToken() {
   return localStorage.getItem("token") || sessionStorage.getItem("token");
+}
+
+function encerrarSessao(navigate) {
+  localStorage.removeItem("token");
+  sessionStorage.removeItem("token");
+  navigate("/login", { replace: true });
 }
 
 function formatarData(data) {
@@ -59,13 +66,22 @@ function formatarCEP(cep) {
 }
 
 function extrairProposta(texto = "") {
-  const tipo = texto.match(/Tipo de parceria:\s*([^\n]+)/i);
-  const descricao = texto.match(/Descrição:\s*([\s\S]*)/i);
+  const conteudo = String(texto || "").trim();
+
+  if (!conteudo) {
+    return {
+      tipoParceria: "Não informado",
+      descricao: "Nenhuma descrição informada.",
+    };
+  }
+
+  const tipo = conteudo.match(/Tipo de parceria:\s*([^\r\n]+)/i);
+  const descricao = conteudo.match(/Descrição:\s*([\s\S]*)/i);
 
   return {
     tipoParceria: tipo?.[1]?.trim() || "Não informado",
     descricao:
-      descricao?.[1]?.trim() || texto || "Nenhuma descrição informada.",
+      descricao?.[1]?.trim() || conteudo || "Nenhuma descrição informada.",
   };
 }
 
@@ -96,6 +112,7 @@ function obterMensagemErro(resultado, mensagemPadrao) {
 
 function AdminPropostaDetalhes() {
   const { id } = useParams();
+  const navigate = useNavigate();
 
   const [proposta, setProposta] = useState(null);
   const [carregando, setCarregando] = useState(true);
@@ -112,7 +129,8 @@ function AdminPropostaDetalhes() {
       const token = obterToken();
 
       if (!token) {
-        throw new Error("Sua sessão expirou. Faça login novamente.");
+        encerrarSessao(navigate);
+        return null;
       }
 
       const resposta = await fetch(
@@ -128,13 +146,18 @@ function AdminPropostaDetalhes() {
 
       if (!resposta.ok) {
         if (resposta.status === 401) {
-          throw new Error("Sua sessão expirou. Faça login novamente.");
+          encerrarSessao(navigate);
+          return null;
         }
 
         if (resposta.status === 403) {
           throw new Error(
             "Você não tem permissão para acessar esta proposta."
           );
+        }
+
+        if (resposta.status === 404) {
+          throw new Error("Proposta não encontrada.");
         }
 
         throw new Error(
@@ -153,7 +176,7 @@ function AdminPropostaDetalhes() {
     } finally {
       setCarregando(false);
     }
-  }, [id]);
+  }, [id, navigate]);
 
   useEffect(() => {
     carregarProposta();
@@ -189,7 +212,8 @@ function AdminPropostaDetalhes() {
       const token = obterToken();
 
       if (!token) {
-        throw new Error("Sua sessão expirou. Faça login novamente.");
+        encerrarSessao(navigate);
+        return;
       }
 
       const endpoint = acao === "aprovar" ? "aprovar" : "rejeitar";
@@ -217,13 +241,18 @@ function AdminPropostaDetalhes() {
 
       if (!resposta.ok) {
         if (resposta.status === 401) {
-          throw new Error("Sua sessão expirou. Faça login novamente.");
+          encerrarSessao(navigate);
+          return;
         }
 
         if (resposta.status === 403) {
           throw new Error(
             "Você não tem permissão para analisar propostas."
           );
+        }
+
+        if (resposta.status === 404) {
+          throw new Error("Proposta não encontrada.");
         }
 
         throw new Error(
@@ -240,9 +269,6 @@ function AdminPropostaDetalhes() {
       const propostaAtualizada = await carregarProposta();
 
       if (!propostaAtualizada) {
-        setErro(
-          "A análise foi enviada, mas não foi possível atualizar os detalhes. Tente recarregar a página."
-        );
         return;
       }
 

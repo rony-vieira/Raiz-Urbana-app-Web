@@ -1,140 +1,167 @@
+
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import API_URL from "../../services/api";
 import "./AdminUsuarioDetalhes.css";
 
 function AdminUsuarioDetalhes() {
   const { id } = useParams();
+  const navigate = useNavigate();
 
   const [usuario, setUsuario] = useState(null);
   const [solicitacoes, setSolicitacoes] = useState([]);
-
   const [carregando, setCarregando] = useState(true);
   const [alterandoTipo, setAlterandoTipo] = useState(false);
-
   const [erro, setErro] = useState("");
-
-  // ==========================================
-  // TOKEN
-  // ==========================================
+  const [tentativa, setTentativa] = useState(0);
 
   const obterToken = () => {
     return (
-      localStorage.getItem("token") ||
-      sessionStorage.getItem("token")
+      sessionStorage.getItem("token") ||
+      localStorage.getItem("token")
     );
   };
 
-  // ==========================================
-  // BUSCAR DADOS
-  // ==========================================
+  const encerrarSessao = () => {
+    sessionStorage.removeItem("token");
+    localStorage.removeItem("token");
+    sessionStorage.removeItem("usuarioLogado");
+    localStorage.removeItem("usuarioLogado");
+    navigate("/login", { replace: true });
+  };
 
-  const carregarDados = async () => {
+  const lerResposta = async (response) => {
     try {
-      setCarregando(true);
-      setErro("");
-
-      const token = obterToken();
-
-      if (!token) {
-        throw new Error(
-          "Token de autenticação não encontrado."
-        );
-      }
-
-      // ==========================================
-      // BUSCAR USUÁRIO
-      // ==========================================
-
-      const respostaUsuario = await fetch(
-        `${API_URL}/api/usuarios/${id}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      let dadosUsuario = null;
-
-      try {
-        dadosUsuario = await respostaUsuario.json();
-      } catch {
-        dadosUsuario = null;
-      }
-
-      if (!respostaUsuario.ok) {
-        throw new Error(
-          dadosUsuario?.message ||
-            dadosUsuario?.mensagem ||
-            "Não foi possível carregar o usuário."
-        );
-      }
-
-      setUsuario(dadosUsuario);
-
-      // ==========================================
-      // BUSCAR SOLICITAÇÕES
-      // ==========================================
-
-      const respostaSolicitacoes = await fetch(
-        `${API_URL}/api/solicitacoes/usuario/${id}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      let dadosSolicitacoes = [];
-
-      try {
-        dadosSolicitacoes =
-          await respostaSolicitacoes.json();
-      } catch {
-        dadosSolicitacoes = [];
-      }
-
-      if (!respostaSolicitacoes.ok) {
-        throw new Error(
-          dadosSolicitacoes?.message ||
-            dadosSolicitacoes?.mensagem ||
-            "Não foi possível carregar as solicitações do usuário."
-        );
-      }
-
-      setSolicitacoes(
-        Array.isArray(dadosSolicitacoes)
-          ? dadosSolicitacoes
-          : []
-      );
-    } catch (error) {
-      console.error(
-        "Erro ao carregar detalhes do usuário:",
-        error
-      );
-
-      setErro(
-        error.message ||
-          "Não foi possível carregar os dados."
-      );
-    } finally {
-      setCarregando(false);
+      return await response.json();
+    } catch {
+      return null;
     }
   };
 
   useEffect(() => {
-    carregarDados();
-  }, [id]);
+    let ativo = true;
 
-  // ==========================================
-  // TRANSFORMAR EM GESTOR
-  // ==========================================
+    const carregarDados = async () => {
+      try {
+        setCarregando(true);
+        setErro("");
+
+        const token = obterToken();
+
+        if (!token) {
+          encerrarSessao();
+          return;
+        }
+
+        const respostaUsuario = await fetch(
+          `${API_URL}/api/usuarios/${id}`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        const dadosUsuario = await lerResposta(respostaUsuario);
+
+        if (respostaUsuario.status === 401) {
+          encerrarSessao();
+          return;
+        }
+
+        if (respostaUsuario.status === 403) {
+          throw new Error(
+            "Você não tem permissão para visualizar os dados deste usuário."
+          );
+        }
+
+        if (!respostaUsuario.ok) {
+          throw new Error(
+            dadosUsuario?.message ||
+              dadosUsuario?.mensagem ||
+              "Não foi possível carregar o usuário."
+          );
+        }
+
+        const respostaSolicitacoes = await fetch(
+          `${API_URL}/api/solicitacoes/usuario/${id}`,
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        const dadosSolicitacoes = await lerResposta(
+          respostaSolicitacoes
+        );
+
+        if (respostaSolicitacoes.status === 401) {
+          encerrarSessao();
+          return;
+        }
+
+        if (respostaSolicitacoes.status === 403) {
+          throw new Error(
+            "Você não tem permissão para visualizar as solicitações desta conta."
+          );
+        }
+
+        if (!respostaSolicitacoes.ok) {
+          throw new Error(
+            dadosSolicitacoes?.message ||
+              dadosSolicitacoes?.mensagem ||
+              "Não foi possível carregar as solicitações do usuário."
+          );
+        }
+
+        if (ativo) {
+          setUsuario(dadosUsuario);
+          setSolicitacoes(
+            Array.isArray(dadosSolicitacoes)
+              ? dadosSolicitacoes
+              : []
+          );
+        }
+      } catch (error) {
+        console.error(
+          "Erro ao carregar detalhes do usuário:",
+          error
+        );
+
+        if (ativo) {
+          setErro(
+            error.message ||
+              "Não foi possível carregar os dados."
+          );
+        }
+      } finally {
+        if (ativo) {
+          setCarregando(false);
+        }
+      }
+    };
+
+    carregarDados();
+
+    return () => {
+      ativo = false;
+    };
+  }, [id, tentativa]);
+
+  const tratarErroAutorizacao = (response) => {
+    if (response.status === 401) {
+      encerrarSessao();
+      return true;
+    }
+
+    return false;
+  };
 
   const transformarEmGestor = async () => {
-    if (!usuario) {
+    if (!usuario || alterandoTipo) {
       return;
     }
 
@@ -150,9 +177,7 @@ function AdminUsuarioDetalhes() {
     const bairroNormalizado = bairroAtuacao.trim();
 
     if (!bairroNormalizado) {
-      alert(
-        "O bairro de atuação é obrigatório."
-      );
+      window.alert("O bairro de atuação é obrigatório.");
       return;
     }
 
@@ -170,9 +195,8 @@ function AdminUsuarioDetalhes() {
       const token = obterToken();
 
       if (!token) {
-        throw new Error(
-          "Token de autenticação não encontrado."
-        );
+        encerrarSessao();
+        return;
       }
 
       const response = await fetch(
@@ -189,12 +213,16 @@ function AdminUsuarioDetalhes() {
         }
       );
 
-      let resposta = null;
+      const resposta = await lerResposta(response);
 
-      try {
-        resposta = await response.json();
-      } catch {
-        resposta = null;
+      if (tratarErroAutorizacao(response)) {
+        return;
+      }
+
+      if (response.status === 403) {
+        throw new Error(
+          "Você não tem permissão para transformar este usuário em gestor."
+        );
       }
 
       if (!response.ok) {
@@ -207,7 +235,7 @@ function AdminUsuarioDetalhes() {
 
       setUsuario(resposta);
 
-      alert(
+      window.alert(
         "Usuário transformado em gestor com sucesso."
       );
     } catch (error) {
@@ -216,7 +244,7 @@ function AdminUsuarioDetalhes() {
         error
       );
 
-      alert(
+      window.alert(
         error.message ||
           "Não foi possível alterar o tipo da conta."
       );
@@ -225,12 +253,8 @@ function AdminUsuarioDetalhes() {
     }
   };
 
-  // ==========================================
-  // TRANSFORMAR EM USUÁRIO
-  // ==========================================
-
   const transformarEmUsuario = async () => {
-    if (!usuario) {
+    if (!usuario || alterandoTipo) {
       return;
     }
 
@@ -248,9 +272,8 @@ function AdminUsuarioDetalhes() {
       const token = obterToken();
 
       if (!token) {
-        throw new Error(
-          "Token de autenticação não encontrado."
-        );
+        encerrarSessao();
+        return;
       }
 
       const response = await fetch(
@@ -263,12 +286,16 @@ function AdminUsuarioDetalhes() {
         }
       );
 
-      let resposta = null;
+      const resposta = await lerResposta(response);
 
-      try {
-        resposta = await response.json();
-      } catch {
-        resposta = null;
+      if (tratarErroAutorizacao(response)) {
+        return;
+      }
+
+      if (response.status === 403) {
+        throw new Error(
+          "Você não tem permissão para alterar o tipo desta conta."
+        );
       }
 
       if (!response.ok) {
@@ -281,7 +308,7 @@ function AdminUsuarioDetalhes() {
 
       setUsuario(resposta);
 
-      alert(
+      window.alert(
         "Gestor transformado em usuário com sucesso."
       );
     } catch (error) {
@@ -290,7 +317,7 @@ function AdminUsuarioDetalhes() {
         error
       );
 
-      alert(
+      window.alert(
         error.message ||
           "Não foi possível alterar o tipo da conta."
       );
@@ -299,30 +326,20 @@ function AdminUsuarioDetalhes() {
     }
   };
 
-  // ==========================================
-  // STATUS
-  // ==========================================
-
   const traduzirStatus = (status) => {
     switch (status) {
       case "PENDENTE":
         return "Pendente";
-
       case "EM_ANALISE":
         return "Em análise";
-
       case "VISITA_AGENDADA":
         return "Visita agendada";
-
       case "APROVADO":
         return "Aprovado";
-
       case "CONCLUIDO":
         return "Concluído";
-
       case "RECUSADO":
         return "Recusado";
-
       default:
         return status || "Não informado";
     }
@@ -332,42 +349,31 @@ function AdminUsuarioDetalhes() {
     switch (status) {
       case "PENDENTE":
         return "admin-usuario-status-pendente";
-
       case "EM_ANALISE":
         return "admin-usuario-status-analise";
-
       case "VISITA_AGENDADA":
         return "admin-usuario-status-visita";
-
       case "APROVADO":
         return "admin-usuario-status-aprovado";
-
       case "CONCLUIDO":
         return "admin-usuario-status-concluido";
-
       case "RECUSADO":
         return "admin-usuario-status-recusado";
-
       default:
         return "";
     }
   };
 
-  // ==========================================
-  // TIPO DA CONTA
-  // ==========================================
-
   const traduzirTipo = (tipo) => {
     switch (tipo) {
       case "USUARIO":
         return "Usuário";
-
       case "GESTOR":
         return "Gestor";
-
       case "BOSS":
         return "Boss";
-
+      case "EMPRESA_PARCEIRA":
+        return "Empresa parceira";
       default:
         return tipo || "Não informado";
     }
@@ -377,21 +383,14 @@ function AdminUsuarioDetalhes() {
     switch (tipo) {
       case "USUARIO":
         return "admin-usuario-tipo-usuario";
-
       case "GESTOR":
         return "admin-usuario-tipo-gestor";
-
       case "BOSS":
         return "admin-usuario-tipo-boss";
-
       default:
         return "";
     }
   };
-
-  // ==========================================
-  // DATA
-  // ==========================================
 
   const formatarData = (data) => {
     if (!data) {
@@ -404,14 +403,8 @@ function AdminUsuarioDetalhes() {
       return data;
     }
 
-    return dataConvertida.toLocaleDateString(
-      "pt-BR"
-    );
+    return dataConvertida.toLocaleDateString("pt-BR");
   };
-
-  // ==========================================
-  // RESUMO
-  // ==========================================
 
   const totalEmAnalise = solicitacoes.filter(
     (solicitacao) =>
@@ -422,13 +415,8 @@ function AdminUsuarioDetalhes() {
 
   const totalConcluidas = solicitacoes.filter(
     (solicitacao) =>
-      solicitacao.status === "APROVADO" ||
       solicitacao.status === "CONCLUIDO"
   ).length;
-
-  // ==========================================
-  // CARREGAMENTO
-  // ==========================================
 
   if (carregando) {
     return (
@@ -448,10 +436,6 @@ function AdminUsuarioDetalhes() {
     );
   }
 
-  // ==========================================
-  // ERRO
-  // ==========================================
-
   if (erro || !usuario) {
     return (
       <main className="admin-usuario-detalhes-page">
@@ -468,13 +452,12 @@ function AdminUsuarioDetalhes() {
             </h2>
 
             <p>
-              {erro ||
-                "Usuário não encontrado."}
+              {erro || "Usuário não encontrado."}
             </p>
 
             <button
               type="button"
-              onClick={carregarDados}
+              onClick={() => setTentativa((atual) => atual + 1)}
             >
               Tentar novamente
             </button>
@@ -492,10 +475,6 @@ function AdminUsuarioDetalhes() {
             ← Voltar para usuários
           </Link>
         </div>
-
-        {/* ======================================
-            TOPO
-        ====================================== */}
 
         <section className="admin-usuario-detalhes-topo">
           <div className="admin-usuario-detalhes-avatar">
@@ -526,20 +505,15 @@ function AdminUsuarioDetalhes() {
           </div>
         </section>
 
-        {/* ======================================
-            AÇÕES ADMINISTRATIVAS
-        ====================================== */}
-
-        {usuario.tipo !== "BOSS" && (
+        {(usuario.tipo === "USUARIO" ||
+          usuario.tipo === "GESTOR") && (
           <section className="admin-usuario-gerenciamento">
             <div>
               <span className="admin-usuario-gerenciamento-label">
                 Gerenciamento de acesso
               </span>
 
-              <h2>
-                Tipo da conta
-              </h2>
+              <h2>Tipo da conta</h2>
 
               {usuario.tipo === "USUARIO" && (
                 <p>
@@ -609,10 +583,6 @@ function AdminUsuarioDetalhes() {
           </section>
         )}
 
-        {/* ======================================
-            RESUMO
-        ====================================== */}
-
         <section className="admin-usuario-detalhes-resumo">
           <div className="admin-usuario-resumo-card">
             <div className="admin-usuario-resumo-icon">
@@ -643,14 +613,10 @@ function AdminUsuarioDetalhes() {
 
             <div>
               <strong>{totalConcluidas}</strong>
-              <span>Aprovadas / concluídas</span>
+              <span>Concluídas</span>
             </div>
           </div>
         </section>
-
-        {/* ======================================
-            DADOS PESSOAIS
-        ====================================== */}
 
         <section className="admin-usuario-detalhes-card">
           <h2>Dados pessoais</h2>
@@ -659,8 +625,7 @@ function AdminUsuarioDetalhes() {
             <div className="admin-usuario-detalhe-dado">
               <span>Nome completo</span>
               <strong>
-                {usuario.nomeCompleto ||
-                  "Não informado"}
+                {usuario.nomeCompleto || "Não informado"}
               </strong>
             </div>
 
@@ -681,22 +646,17 @@ function AdminUsuarioDetalhes() {
             <div className="admin-usuario-detalhe-dado">
               <span>Telefone</span>
               <strong>
-                {usuario.telefone ||
-                  "Não informado"}
+                {usuario.telefone || "Não informado"}
               </strong>
             </div>
 
             <div className="admin-usuario-detalhe-dado">
               <span>Tipo da conta</span>
-
-              <strong>
-                {traduzirTipo(usuario.tipo)}
-              </strong>
+              <strong>{traduzirTipo(usuario.tipo)}</strong>
             </div>
 
             <div className="admin-usuario-detalhe-dado">
               <span>Conta criada em</span>
-
               <strong>
                 {formatarData(usuario.createdAt)}
               </strong>
@@ -706,27 +666,20 @@ function AdminUsuarioDetalhes() {
               <>
                 <div className="admin-usuario-detalhe-dado">
                   <span>Bairro de atuação</span>
-
                   <strong>
-                    {usuario.bairroAtuacao ||
-                      "Não informado"}
+                    {usuario.bairroAtuacao || "Não informado"}
                   </strong>
                 </div>
 
                 <div className="admin-usuario-detalhe-dado">
                   <span>Instituição</span>
-
                   <strong>
-                    {usuario.instituicao ||
-                      "Não informado"}
+                    {usuario.instituicao || "Não informado"}
                   </strong>
                 </div>
 
                 <div className="admin-usuario-detalhe-dado admin-usuario-detalhe-largo">
-                  <span>
-                    E-mail institucional
-                  </span>
-
+                  <span>E-mail institucional</span>
                   <strong>
                     {usuario.emailInstitucional ||
                       "Não informado"}
@@ -736,10 +689,6 @@ function AdminUsuarioDetalhes() {
             )}
           </div>
         </section>
-
-        {/* ======================================
-            ENDEREÇO
-        ====================================== */}
 
         <section className="admin-usuario-detalhes-card">
           <h2>Endereço</h2>
@@ -761,7 +710,6 @@ function AdminUsuarioDetalhes() {
 
             <div className="admin-usuario-detalhe-dado admin-usuario-detalhe-largo">
               <span>Rua / Avenida</span>
-
               <strong>
                 {usuario.rua || "Não informado"}
               </strong>
@@ -769,7 +717,6 @@ function AdminUsuarioDetalhes() {
 
             <div className="admin-usuario-detalhe-dado">
               <span>Bairro</span>
-
               <strong>
                 {usuario.bairro || "Não informado"}
               </strong>
@@ -777,20 +724,13 @@ function AdminUsuarioDetalhes() {
 
             <div className="admin-usuario-detalhe-dado">
               <span>Cidade / Estado</span>
-
               <strong>
                 {usuario.cidade || "Não informado"}
-                {usuario.estado
-                  ? ` - ${usuario.estado}`
-                  : ""}
+                {usuario.estado ? ` - ${usuario.estado}` : ""}
               </strong>
             </div>
           </div>
         </section>
-
-        {/* ======================================
-            SOLICITAÇÕES
-        ====================================== */}
 
         <section className="admin-usuario-detalhes-card">
           <div className="admin-usuario-solicitacoes-header">
@@ -824,11 +764,7 @@ function AdminUsuarioDetalhes() {
 
                   <div>
                     <span>Protocolo</span>
-
-                    <h3>
-                      {solicitacao.protocolo}
-                    </h3>
-
+                    <h3>{solicitacao.protocolo}</h3>
                     <p>
                       {solicitacao.ruaAvenida ||
                         "Endereço não informado"}
@@ -838,16 +774,13 @@ function AdminUsuarioDetalhes() {
 
                 <div className="admin-usuario-solicitacao-dado">
                   <span>Bairro</span>
-
                   <strong>
-                    {solicitacao.bairro ||
-                      "Não informado"}
+                    {solicitacao.bairro || "Não informado"}
                   </strong>
                 </div>
 
                 <div className="admin-usuario-solicitacao-dado">
                   <span>Data</span>
-
                   <strong>
                     {formatarData(
                       solicitacao.dataSolicitacao
@@ -861,9 +794,7 @@ function AdminUsuarioDetalhes() {
                       solicitacao.status
                     )}`}
                   >
-                    {traduzirStatus(
-                      solicitacao.status
-                    )}
+                    {traduzirStatus(solicitacao.status)}
                   </span>
 
                   <Link

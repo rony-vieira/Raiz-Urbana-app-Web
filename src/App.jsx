@@ -34,6 +34,9 @@ import AdminSolicitacoes from "./pages/boss/AdminSolicitacoes";
 import AdminSolicitacaoDetalhes from "./pages/boss/AdminSolicitacaoDetalhes";
 import AdminUsuarios from "./pages/boss/AdminUsuarios";
 import AdminUsuarioDetalhes from "./pages/boss/AdminUsuarioDetalhes";
+import AdminGestores from "./pages/boss/AdminGestores";
+import AdminGestorDetalhes from "./pages/boss/AdminGestorDetalhes";
+import RedefinirSenha from "./pages/RedefinirSenha";
 
 function App() {
   return (
@@ -246,6 +249,29 @@ function App() {
                   <AdminUsuarioDetalhes />
                 </ProtectedRoute>
               }
+            />
+
+            <Route
+              path="/admin/gestores"
+              element={
+                <ProtectedRoute tiposPermitidos={["BOSS"]}>
+                  <AdminGestores />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/admin/gestores/:id"
+              element={
+                <ProtectedRoute tiposPermitidos={["BOSS"]}>
+                  <AdminGestorDetalhes />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/redefinir-senha"
+              element={<RedefinirSenha />}
             />
           </Routes>
         </main>
